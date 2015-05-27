@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<section name="com.microsoft.tfs.client.common.ui.dialogs.connect.ServerListDialog">
+		<item value="3" key="VIEWS"/>
+		<item value="218" key="DIALOG_ORIGIN_Y"/>
+		<item value="715" key="DIALOG_ORIGIN_X"/>
+		<item value="736" key="DIALOG_WIDTH"/>
+		<item value="05/27/15 09:30:37" key="SINCE"/>
+		<item value="36218" key="ACCUMULATED_OPEN_TIME"/>
+		<item value="362" key="DIALOG_HEIGHT"/>
+		<item value="3" key="TIME_COUNTS"/>
+	</section>
+	<section name="wizard-TfsImportWizard">
+	</section>
+	<section name="com.microsoft.tfs.client.common.ui.dialogs.connect.AddServerDialog">
+		<item value="3" key="VIEWS"/>
+		<item value="189" key="DIALOG_ORIGIN_Y"/>
+		<item value="833" key="DIALOG_ORIGIN_X"/>
+		<item value="500" key="DIALOG_WIDTH"/>
+		<item value="05/27/15 09:30:43" key="SINCE"/>
+		<item value="9178" key="ACCUMULATED_OPEN_TIME"/>
+		<item value="315" key="DIALOG_HEIGHT"/>
+		<item value="3" key="TIME_COUNTS"/>
+	</section>
+</section>

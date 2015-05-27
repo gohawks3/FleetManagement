@@ -1,0 +1,312 @@
+import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+
+import org.predixion.mlsmclient.mlsm.wrapper.MLSMWrapper;
+
+import predixion.Helpers.SchemaDefinition;
+import predixion.Helpers.SharedUtils;
+
+import org.predixion.mlsmclient.interfaces.IMLSMExecuteWithCache;
+
+import Aggregation.CacheInfo;
+
+
+/**
+ * This is to test that you can do prediction on IoT
+ * device. The device can cache a set time period of rows
+ */
+
+/**
+ * @author cxu
+ * 
+ */
+public class FMSample {
+
+	/**
+	 * @param args
+	 * @throws URISyntaxException
+	 */
+	private MLSMWrapper mlsmWrapper;
+	IMLSMExecuteWithCache mlsmExecuteWithCache;
+	// set arbitrary max rows to 512
+	int cacheMaxRows = 512;
+	private static String testfilesFolder = "PXWindowTestFiles";
+	private static String fakedNestedTablesMLSMFile = testfilesFolder + "\\fakedKeySignedFleet.mlsm";
+	private static String nestedTablesMLSMFile = testfilesFolder + "\\fleet.mlsm";
+	
+
+	public FMSample(String mlsmFileName, boolean skipValidation) throws Exception {
+		mlsmWrapper = MLSMWrapper.CreateWrapper();
+		mlsmWrapper.SetMLSMFile(mlsmFileName);
+		mlsmWrapper.SetCacheMaxRows(cacheMaxRows);
+		mlsmWrapper.SetValidateMLSMSignature(skipValidation);
+	}
+	
+	public static void main(String[] args) 
+	{	
+		try
+		{
+			String outputFile = testfilesFolder + "\\FakeNestedTableOutput.txt";
+			String inputFile1 = testfilesFolder + "\\FleetSensorData.csv";
+			String inputFile2 = testfilesFolder + "\\MaintenanceRecord.csv";
+
+			testfilesFolder = System.getProperty("user.dir") + "\\" + testfilesFolder;
+			FMSample testFaked = new FMSample(fakedNestedTablesMLSMFile, true);
+			try
+			{
+				// this mlsm is signed with a faked key 
+				testFaked.RunNestedTest(outputFile, inputFile1, inputFile2);
+				String err = "XMLSignatureException NOT caught";
+				System.out.println(err);
+				WriteToFile(outputFile, err);			
+			}
+			catch (javax.xml.crypto.dsig.XMLSignatureException e)
+			{
+				String err = "XMLSignatureException caught";
+				System.out.println(err);
+				WriteToFile(outputFile, err);
+			}				
+			catch (Exception ee)
+			{
+				String err = "XMLSignatureException NOT caught";
+				System.out.println(err);
+				WriteToFile(outputFile, err);	
+			}
+					
+			System.out.println("Running nested table test on fleet dataset");
+			outputFile = testfilesFolder + "\\NestedTableOutput.txt";
+			FMSample test = new FMSample(nestedTablesMLSMFile, true);
+			test.RunNestedTest(outputFile, inputFile1, inputFile2);
+			System.out.println("Running Sliding Window Test");
+			outputFile = testfilesFolder + "\\WindowTestOutput.txt";
+			
+			// for this test, we tested with mlsm signature validation turned off
+			String mlsmFile = testfilesFolder + "\\SlidingWindow.mlsm";
+			test = new FMSample(mlsmFile, false);
+			test.RunWindowTest(outputFile);
+		}
+		catch (Exception e)
+		{
+			System.out.println(e);
+		}
+	}
+	
+	private void RunNestedTest(String outputFile, String caseTableFile, String relatedTableFile) throws Exception {		
+		// get execution engine
+		mlsmExecuteWithCache = mlsmWrapper.GetAggregationEngine();
+		ExecuteMLSM(outputFile, caseTableFile, relatedTableFile);
+		
+		// test Reload MLSM
+		System.out.println("Running nested table test on fleet dataset using reload");
+		String nestedTablesMLSMFile2 = testfilesFolder + "\\fleet2_90dayWarnBrakes.mlsm";
+		// TODO: after 19055 is fixed, remove this line to validate mlsm		
+		// String mlsm2 = ReadFromFile(nestedTablesMLSMFile2);
+		String mlsm2 = SharedUtils.GetContentFromFile(nestedTablesMLSMFile2);
+		
+		outputFile = testfilesFolder + "\\NestedTableOutput2.txt";
+		mlsmExecuteWithCache.ReloadMLSM(mlsm2);
+		ExecuteMLSM(outputFile, caseTableFile, relatedTableFile);
+		
+	}
+	
+	private void ExecuteMLSM(String outputFile, String caseTableFile, String relatedTableFile) throws Exception
+	{		
+		// output schema
+		ArrayList<SchemaDefinition> outputSchema = mlsmExecuteWithCache.GetOutputSchema();
+		
+		if (outputFile == null)
+			throw new IllegalArgumentException("OutputFile cannot be empty");
+		
+		// delete existing file
+		try
+		{
+			File file = new File(outputFile);
+			file.delete();
+		}
+		catch (Exception e)
+		{
+			System.out.println(outputFile + "is not there!");
+		}
+
+		int idx = 0; // count of rows
+		BufferedReader brRelatedTable = new BufferedReader(new FileReader(relatedTableFile));
+		brRelatedTable.readLine(); // throw away header line
+		BufferedReader brCaseTable = new BufferedReader(new FileReader(caseTableFile));
+		brCaseTable.readLine(); // throw away header line
+		
+		while (true)
+		{
+			idx ++;
+			//PrintCacheInfo();
+			if (idx % 30 == 0)
+			{
+				String caseRow;
+				// input should only have data, no header since it's streamed from sensor
+				//while ((caseRow = br.readLine()) != null)
+				caseRow = brCaseTable.readLine();
+				if (caseRow == null) break;
+				//PrintCacheInfo();
+				// input should only have data, no header since it's streamed from sensor				
+				String[] caseStrline = caseRow.split(",");
+				Object[] caseLine = new Object[caseStrline.length];
+				for (int i = 0; i<caseStrline.length-8; i++) // the last 8 columns are target columns, should not be used as input
+				{
+					caseLine[i] = caseStrline[i];
+				}			
+				mlsmExecuteWithCache.AddRow(caseLine);
+				
+				// score on this line
+				Iterable<Object[]> rets = mlsmExecuteWithCache.Execute();
+
+				for (Object[] output : rets)
+				{
+					for (int j = 0; j < output.length; j++)
+					{
+						WriteToFile(outputFile, String.format("%s:\t%s", outputSchema.get(j).getColumnName(), output[j]));
+					}
+				}				
+			}
+			// input should only have data, no header since it's streamed from sensor		
+			// get input data (simulate streaming)
+				String relatedRow = brRelatedTable.readLine();
+				if (relatedRow == null) break;
+				// test only. In real world, related table/case table can't be read in whole in a file
+				String[] strline = relatedRow.split(",");
+				Object[] line = new Object[strline.length];
+				for (int i = 0; i<strline.length; i++)
+				{				
+					line[i] = strline[i];
+				}
+			
+				SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
+				Date date = null;
+				if (!(strline[2].equals("")))
+				{
+					date = formatter.parse(strline[2]);
+				}
+				line[2] = date;
+				mlsmExecuteWithCache.AddRow("MaintenanceRecord", line);
+		}	
+		System.out.println("done");
+		brCaseTable.close();
+		brRelatedTable.close();
+	}
+	
+	private void RunWindowTest(String outputFile) throws Exception {
+		// get execution engine
+		mlsmExecuteWithCache = mlsmWrapper.GetAggregationEngine();
+		
+		// output schema
+		ArrayList<SchemaDefinition> outputSchema = mlsmExecuteWithCache.GetOutputSchema();
+		
+		if (outputFile == null)
+			throw new IllegalArgumentException("OutputFile cannot be empty");
+		
+		// delete existing file
+		try
+		{
+			File file = new File(outputFile);
+			file.delete();
+		}
+		catch (Exception e)
+		{
+			System.out.println(outputFile + "is not there!");
+		}
+
+		// get input data (simulate streaming)
+		String inputFile = testfilesFolder + "\\SlidingWindowTestData.csv";
+		//String rows = ReadFromFile(inputFile);
+		
+		try (BufferedReader br = new BufferedReader(new FileReader(inputFile)))
+		{
+			String row;
+			for (int idx=0; idx<cacheMaxRows; idx++)
+			{
+				//PrintCacheInfo();
+				// input should only have data, no header since it's streamed from sensor
+				while ((row = br.readLine()) != null)
+				{
+					String[] strline = row.split(",");
+					Object[] line = new Object[strline.length];
+					for (int i = 0; i<strline.length; i++)
+					{
+						line[i] = strline[i];
+					}
+		
+					SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+					Date date = null;
+					if (!(strline[1].equals("")))
+					{
+						date = formatter.parse(strline[1]);
+					}
+					line[1] = date;
+					mlsmExecuteWithCache.AddRow(line);		
+					Iterable<Object[]> rets = mlsmExecuteWithCache.Execute();
+		
+					for (Object[] output : rets)
+					{
+						String input = "";
+						for (int i = 0; i<strline.length; i++)
+						{
+							input += String.format("%s:\t", strline[i]);
+						}
+						for (int j = 0; j < output.length; j++)
+						{
+							WriteToFile(outputFile, input + String.format("%s:\t%s", outputSchema.get(j).getColumnName(), output[j]));
+						}
+					}
+				} // ebd reading inputFile
+			} // end of cacheMaxRows
+		}
+		System.out.println("Finished running Window java test");		
+	}
+
+	public void PrintCacheInfo() throws Exception
+	{
+		Iterable<CacheInfo> cacheInfoList = mlsmExecuteWithCache.GetCacheInfo();
+		for (CacheInfo cacheInfo : cacheInfoList)
+		{
+			System.out.println(String.format("Buffer size: %s", cacheInfo.BufferRows));
+			System.out.println(String.format("Buffer size: %s", cacheInfo.BufferCols));
+			System.out.println(String.format("Index size: %s", cacheInfo.IndexSize));
+		}
+	}
+		
+	public static String ReadFromFile(String fileName) throws IOException {
+		String testData = new String();
+
+		FileReader inputFile = new FileReader(fileName);
+		BufferedReader bufferReader = new BufferedReader(inputFile);
+		try {
+			String line = null;
+			while ((line = bufferReader.readLine()) != null)
+			{
+					testData += line + "\r\n";
+			}
+		} finally {
+			bufferReader.close();
+		}
+		return testData;
+	}
+
+	
+	public static void WriteToFile(String fileName, String text) throws IOException {
+		File file = new File(fileName);
+		if (!file.exists())
+		{
+			file.createNewFile();
+		}
+		
+		FileOutputStream fos = new FileOutputStream(file, true);		
+		//BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(fos, "utf-8"));
+		//bw.write(text);
+		//bw.newLine();
+		fos.write(text.getBytes());
+		fos.write(System.getProperty("line.separator").getBytes());
+		fos.flush();
+		fos.close();
+		//bw.close();
+	}
+}
