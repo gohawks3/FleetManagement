@@ -26,7 +26,7 @@ public class FMSample {
 	// set arbitrary max rows to 512
 	int cacheMaxRows = 512;
 	private static String testfilesFolder = "FMSampleFiles";
-	private static String nestedTablesMLSMFile = testfilesFolder + "\\fleet.mlsm";
+	private static String nestedTablesMLSMFile = testfilesFolder + System.getProperty("file.separator") + "fleet.mlsm";
 	
 
 	public FMSample(String mlsmFileName, boolean skipValidation) throws Exception {
@@ -40,11 +40,11 @@ public class FMSample {
 	{	
 		try
 		{
-			String inputFile1 = testfilesFolder + "\\FleetSensorData.csv";
-			String inputFile2 = testfilesFolder + "\\MaintenanceRecord.csv";
+			String inputFile1 = testfilesFolder + System.getProperty("file.separator") + "FleetSensorData.csv";
+			String inputFile2 = testfilesFolder + System.getProperty("file.separator") + "MaintenanceRecord.csv";
 
-			testfilesFolder = System.getProperty("user.dir") + "\\" + testfilesFolder;
-			String outputFile = testfilesFolder + "\\NestedTableOutput.txt";
+			testfilesFolder = System.getProperty("user.dir") + System.getProperty("file.separator") + testfilesFolder;
+			String outputFile = testfilesFolder + System.getProperty("file.separator") + "NestedTableOutput.txt";
 			FMSample test = new FMSample(nestedTablesMLSMFile, true);
 			test.RunNestedTest(outputFile, inputFile1, inputFile2);
 		}
@@ -61,10 +61,10 @@ public class FMSample {
 		
 		// Reload MLSM - inputs much be same with the previous mlsm
 		System.out.println("Running nested table test on fleet dataset using reload");
-		String nestedTablesMLSMFile2 = testfilesFolder + "\\fleet2_90dayWarnBrakes.mlsm";
+		String nestedTablesMLSMFile2 = testfilesFolder + System.getProperty("file.separator") + "fleet2_90dayWarnBrakes.mlsm";
 		String mlsm2 = ReadFromFile(nestedTablesMLSMFile2);
 		
-		outputFile = testfilesFolder + "\\NestedTableOutput2.txt";
+		outputFile = testfilesFolder + System.getProperty("file.separator") + "NestedTableOutput2.txt";
 		mlsmExecuteWithCache.ReloadMLSM(mlsm2);
 		ExecuteMLSM(outputFile, caseTableFile, relatedTableFile);
 		
